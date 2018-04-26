@@ -10,6 +10,11 @@
         {
           "tag": "master", 
           "name": "ricejasonf/nbdl" 
+        },
+        {
+          "tag": "latest",
+          "name": "ricejasonf/cppdock",
+          "source": "docker"
         }
       ]
     }, 
