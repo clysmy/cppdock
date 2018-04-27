@@ -49,6 +49,9 @@ def parse_args_build(args):
 
 def parse_args_install_dep(args):
     parser = argparse.ArgumentParser(prog='cppdock install_dep')
+    parser.add_argument('--docker-source',dest    = 'docker_source',
+                                        action    = 'store_true',
+                                        help      = 'Is dep form docker')
     group  = parser.add_argument_group('required arguments')
     group.add_argument('platform',      help      = 'Token for target platform')
     group.add_argument('branch',        help      = 'SHA1 of git revision')
@@ -81,6 +84,10 @@ def command_build(args):
         make_dep_image(config, args.platform, dockerfile)
 
 def command_install_dep(args):
+    if args.docker_source:
+        print 'Docker deps not implemented yet'
+        sys.exit(0)
+
     check_sysroot()
     url = make_archive_url(args.repo, args.branch)
     input = urllib2.urlopen(url)
@@ -120,7 +127,6 @@ def load_config_file_with_args(args):
     return load_config_file(json_file_path)
 
 def load_config_file(json_file_path):
-    import json
     if not os.path.isfile(json_file_path):
         print json_file_path
         raise ValueError('Config file not found.')
@@ -160,8 +166,9 @@ def get_current_sha_with_comment(item):
         return item['revision']
     else:
         if source == 'docker':
-            line = subprocess.check_output(['docker', 'inspect', "--format='{{index .RepoDigests 0 }}'", repo + ':' + tag]).rsplit(':')
-            return line[1][0:40]
+            line = subprocess.check_output(['docker', 'inspect', "--format='{{index .RepoDigests 0 }}'", repo + ':' + tag]).split(':')
+            print line[1]
+            return line[1][0:64]
 
             raise ValueError("Unable to get SHA from docker image")
         else:
@@ -275,7 +282,7 @@ FROM {1}
 def make_deps_dockerfile_stageless(config, platform):
     cppdock_image  = get_config_option(config, 'platform_' + platform)
     deps = get_deps_from_config(config, platform)
-    deps_stages = string.join([make_install_dep(x, y, z) for x, y, z in deps])
+    deps_stages = string.join([make_install_dep(x, y, z, w) for x, y, z, w in deps])
 
     return """
 FROM {0} as build_all
@@ -298,9 +305,13 @@ FROM {0} as build_{2}_{1}
     RUN cppdock install_dep {1} {2} {3}
 """.format(cppdock_image, platform, branch, repo, copy_recipes_term)
 
-def make_install_dep(platform, branch, repo):
-    return """
-    RUN cppdock install_dep {0} {1} {2}""".format(platform, branch, repo)
+def make_install_dep(platform, branch, repo, source):
+    if source == 'docker':
+        return """
+        RUN cppdock install_dep --docker-source {0} {1} {2}""".format(platform, branch, repo)
+    else:
+        return """
+        RUN cppdock install_dep {0} {1} {2}""".format(platform, branch, repo)
 
 def make_deps_import(platform, branch):
     return """
@@ -311,7 +322,7 @@ def get_deps_from_config(config, platform):
 
     for platforms in platform_info:
         if platforms['type'] == platform:
-            return [(platform, item['revision'],  item['name']) for item in platforms['deps']]
+            return [(platform, item['revision'],  item['name'], item.get('source')) for item in platforms['deps']]
     
     raise ValueError('Platform is not specified in cppdock json file')
 
