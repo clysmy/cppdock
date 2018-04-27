@@ -13,7 +13,6 @@ import zipfile
 
 root_path = os.path.abspath('.')
 default_json_file_path = root_path + '/cppdock.json'
-build_init_image = 'ricejasonf/cppdock:latest'
 default_dep_path = "https://github.com/" 
 
 def parse_args_command(args):
@@ -152,21 +151,29 @@ def lock_item_json(item):
     return item
 
 def get_current_sha_with_comment(item):
+    # add docker stuff here
     repo = item['name']
     tag = item['tag']
+    source = item.get('source')
 
     if 'revision' in item:
         return item['revision']
     else:
-        tag = normalize_branch_name(tag)
-        lines = subprocess.check_output(['git', 'ls-remote', normalize_repo_name(repo)]).splitlines()
-        for line in lines:
-            if line.endswith(tag):
-                return line[0:40]
-        raise ValueError("Unable to get SHA from remote git repository")
+        if source == 'docker':
+            line = subprocess.check_output(['docker', 'inspect', "--format='{{index .RepoDigests 0 }}'", repo + ':' + tag]).rsplit(':')
+            return line[1][0:40]
 
-def normalize_repo_name(name):
-    return default_dep_path + name;
+            raise ValueError("Unable to get SHA from docker image")
+        else:
+            tag = normalize_branch_name(tag)
+            lines = subprocess.check_output(['git', 'ls-remote', normalize_repo_name(repo)]).splitlines()
+            for line in lines:
+                if line.endswith(tag):
+                    return line[0:40]
+            raise ValueError("Unable to get SHA from remote git repository")
+
+def normalize_repo_name(name, dep_path=default_dep_path):
+    return dep_path + name;
 
 def normalize_branch_name(name):
     if len(name) == 0 or name == 'HEAD':
