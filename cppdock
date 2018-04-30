@@ -84,37 +84,44 @@ def command_build(args):
         make_dep_image(config, args.platform, dockerfile)
 
 def command_install_dep(args):
-    if args.docker_source:
-        print 'Docker deps not implemented yet'
-        sys.exit(0)
-
     check_sysroot()
-    url = make_archive_url(args.repo, args.branch)
-    input = urllib2.urlopen(url)
-    output = open('dep.zip', 'wr')
-    buf = ''
-    while True:
-        buf = input.read(800)
-        output.write(buf)
-        output.flush()
-        if (len(buf) == 0):
-            break
-    output.close()
+    if args.docker_source:
+        url = make_docker_image_digest(args.repo, args.branch)
+        print url
+        p = subprocess.Popen(['docker', 'pull', url], stdin=subprocess.PIPE)
+        p.communicate('')
+        if p.returncode != 0:
+            print """
+            FAILURE: Docker returned error code {0}.
+            """.format(p.returncode)
+            sys.exit(1)
+    else:
+        url = make_archive_url(args.repo, args.branch)
+        input = urllib2.urlopen(url)
+        output = open('dep.zip', 'wr')
+        buf = ''
+        while True:
+            buf = input.read(800)
+            output.write(buf)
+            output.flush()
+            if (len(buf) == 0):
+                break
+        output.close()
 
-    assert os.path.isfile('dep.zip')
-    assert zipfile.is_zipfile('dep.zip')
+        assert os.path.isfile('dep.zip')
+        assert zipfile.is_zipfile('dep.zip')
 
-    zipfile.ZipFile('dep.zip', 'r').extractall()
-    recipe = find_recipe(args.platform, args.repo)
-    cwd_dir = [x for x in os.listdir('.') if x.endswith(args.branch)][0]
-    p = subprocess.Popen([recipe], cwd = cwd_dir)
-    p.communicate('')
-    if p.returncode != 0:
-        print """
+        zipfile.ZipFile('dep.zip', 'r').extractall()
+        recipe = find_recipe(args.platform, args.repo)
+        cwd_dir = [x for x in os.listdir('.') if x.endswith(args.branch)][0]
+        p = subprocess.Popen([recipe], cwd = cwd_dir)
+        p.communicate('')
+        if p.returncode != 0:
+            print """
 
-    FAILURE: Recipe returned error code {0}.
-        """.format(p.returncode)
-        sys.exit(1)
+        FAILURE: Recipe returned error code {0}.
+            """.format(p.returncode)
+            sys.exit(1)
 
 def install_deps_platform(platform, items):
     for i in range(len(items)):
@@ -205,12 +212,16 @@ def get_max_key_length(config):
 def make_archive_url(repo, branch):
     return 'https://github.com/{0}/archive/{1}.zip'.format(repo, branch)
 
+def make_docker_image_digest(repo, branch):
+    return '{0}@sha256:{1}'.format(repo, branch)
+
 def find_recipe(platform, repo):
     repo = repo.replace('/', '-')
     local_recipe_path = '/opt/cppdock_recipes'
     builtin_recipe_path = os.path.expanduser('~') + '/.cppdock_recipes'
     repo_with_platform = repo + '-' + platform
     xs = [
+        # do docker pull here?
         local_recipe_path   + '/' + repo_with_platform,
         local_recipe_path   + '/' + repo,
         local_recipe_path   + '/default',
@@ -279,10 +290,11 @@ FROM {1}
 {2}
 """.format(deps_stages, cppdock_image, deps_imports)
 
-def make_deps_dockerfile_stageless(config, platform):
+def make_deps_dockerfile_stageless(config, deps):
     cppdock_image  = get_config_option(config, 'platform_' + platform)
     deps = get_deps_from_config(config, platform)
     deps_stages = string.join([make_install_dep(x, y, z, w) for x, y, z, w in deps])
+    # name of last object in deps
 
     return """
 FROM {0} as build_all
